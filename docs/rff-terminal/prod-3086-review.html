@@ -225,8 +225,8 @@
       </tr>
       <tr>
         <td>Consent-based branching (a stakeholder's Slack correction, below)</td>
-        <td><span class="status warn">⚠ known gap</span></td>
-        <td class="evidence">Documented at <code>resolveRateLimitIdentity</code> — see Open Items</td>
+        <td><span class="status ok">✓ resolved</span></td>
+        <td class="evidence">Decision: ephemeral Redis for every caller, consent state or not — see Open Items</td>
       </tr>
     </table>
   </div>
@@ -285,13 +285,14 @@
     <h3 style="font-size:15px;margin-top:0;">1. Infra — provisioning</h3>
     <p style="font-size:14px;">Upstash (HTTP-based Redis) vs. VPC-attached ElastiCache. Terminal's Lambdas have no VPC attachment today, so ElastiCache would be a first. Recommendation on file is Upstash; needs their sign-off either way. The PR is a safe no-op until this resolves — nothing turns on by itself.</p>
 
-    <h3 style="font-size:15px;">2. A stakeholder's Slack correction — consent-based keying</h3>
+    <h3 style="font-size:15px;">2. A stakeholder's Slack correction — consent-based keying <span class="status ok" style="margin-left:8px;">✓ resolved</span></h3>
     <div class="quote">
       "To be clear — the REDIS cache approach is only for Users that tell us not to log/store their User data to their User profile — i.e. they don't give us permission to create PII data. If they give us permission, we keep the current approach, and we don't anonymise their data."
       <cite>Product stakeholder, <a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">internal Slack, post-call</a></cite>
     </div>
-    <p style="font-size:14px;">Checked what this actually means in Terminal's code before assuming a gap: the account-identified key is <em>already</em> the literal, unhashed <code>userId</code> — only the no-token IP fallback gets hashed. So "account-linked, not anonymized" is already true today for every authenticated caller. The real open question — per the ticket's own note, "no Redis-only requirement for that path" — is whether a <strong>granted-consent counter should stay in Redis (like today) or move to a persisted DB counter</strong>. That's a real architecture call for the team, not guessed at here. There's also nowhere to read a live consent state from yet — the extension's consent gate (<a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba</a>) hasn't been built.</p>
-    <p style="font-size:14px;">Same gap exists on the Feed side (<a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb</a>) — findings posted there too; most of Feed's ingestion rate limiting already shipped in October/November, ahead of this ticket.</p>
+    <p style="font-size:14px;">Checked what this actually means in Terminal's code before assuming a gap: the account-identified key is <em>already</em> the literal, unhashed <code>userId</code> — only the no-token IP fallback gets hashed. So "account-linked, not anonymized" is already true today for every authenticated caller, which is what the stakeholder's message was actually asking for.</p>
+    <p style="font-size:14px;"><strong>Resolution:</strong> every caller — consent granted or not — stays on the ephemeral Redis counter; no persisted-DB counter will be built. The written acceptance criteria on both this ticket and the parent initiative are blanket Redis/ephemeral with no consent carve-out — the carve-out only ever existed in the Slack comment above, which was never reconciled back into either AC. Decided and posted to the ticket's own comments; a persisted-DB path remains available as separately-scoped future work if the team ever asks for it against the written requirements, but nothing is being built for it now.</p>
+    <p style="font-size:14px;">Same resolution applies on the Feed side (<a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb</a>) — most of Feed's ingestion rate limiting already shipped in October/November, ahead of this ticket.</p>
   </div>
 </section>
 
