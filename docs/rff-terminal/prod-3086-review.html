@@ -151,7 +151,7 @@
   <div class="inner">
     <div class="kicker">Review source of truth · Reward Flight Finder</div>
     <h1>PROD-3086 — Account/IP-Keyed Rate Limiting for Terminal</h1>
-    <p class="sub">What PR #562 does, how it maps to the decisions made on the 9 Nov 2026 Douglas/Darrell/Ralph sync, and what's still genuinely open. Built so this page — not a thread or a scroll through comments — is the thing to check before approving.</p>
+    <p class="sub">What PR #562 does, how it maps to the decisions made on the 9 Nov 2026 planning sync, and what's still genuinely open. Built so this page — not a thread or a scroll through comments — is the thing to check before approving.</p>
     <div class="badges">
       <span class="badge draft">● Draft PR</span>
       <span class="badge pass">✓ CI passing</span>
@@ -178,12 +178,12 @@
   <h2>Summary</h2>
   <div class="card">
     <p style="margin:0 0 12px;">Rate-limits the two Terminal endpoints the RFF extension actually calls for specific-date availability (British Airways v2's dedicated route, and the generic/Iberia route). Over the agreed thresholds, both return a sanitized <code>429</code> instead of hitting the database. Backed by Upstash (HTTP-based Redis), keyed primarily by account identity with a hashed-IP fallback, and fails <strong>open</strong> on any store error so a Redis problem can never become a Terminal outage.</p>
-    <p style="margin:0;">Ships today as a <strong>no-op</strong>: the Redis credentials are deliberately empty until Vanshita confirms the provisioning approach (Upstash vs. VPC-attached ElastiCache) — that's the one real blocker left, and it's an infra decision, not a code one.</p>
+    <p style="margin:0;">Ships today as a <strong>no-op</strong>: the Redis credentials are deliberately empty until Infra confirms the provisioning approach (Upstash vs. VPC-attached ElastiCache) — that's the one real blocker left, and it's an infra decision, not a code one.</p>
   </div>
 </section>
 
 <section id="alignment">
-  <h2>Alignment with the 9 Nov Douglas/Darrell/Ralph sync</h2>
+  <h2>Alignment with the 9 Nov planning sync</h2>
   <p class="section-note">Recording: <a href="https://tldv.io/app/meetings/6af1c34ff46e670014bbdc1a/" target="_blank">tl;dv</a>. Decisions below are quoted from the call notes on <code>14zpb0j3nrw</code>, not paraphrased from memory.</p>
   <div class="card">
     <table class="align">
@@ -219,12 +219,12 @@
         <td class="evidence">Redis TTL keys only; no new Postgres table</td>
       </tr>
       <tr>
-        <td>Vanshita's confirmation: per-account limit concept in Terminal, provisioning choice</td>
+        <td>Infra confirmation: per-account limit concept in Terminal, provisioning choice</td>
         <td><span class="status open">⏳ open</span></td>
         <td class="evidence">Confirmed greenfield (no infra exists); provisioning sign-off still pending — PR ships as no-op until then</td>
       </tr>
       <tr>
-        <td>Consent-based branching (Douglas's Slack correction, below)</td>
+        <td>Consent-based branching (a stakeholder's Slack correction, below)</td>
         <td><span class="status warn">⚠ known gap</span></td>
         <td class="evidence">Documented at <code>resolveRateLimitIdentity</code> — see Open Items</td>
       </tr>
@@ -282,15 +282,15 @@
 <section id="open">
   <h2>Open items that need a decision, not a code review</h2>
   <div class="card">
-    <h3 style="font-size:15px;margin-top:0;">1. Vanshita — provisioning</h3>
-    <p style="font-size:14px;">Upstash (HTTP-based Redis) vs. VPC-attached ElastiCache. Terminal's Lambdas have no VPC attachment today, so ElastiCache would be a first. Recommendation on file is Upstash; needs her sign-off either way. The PR is a safe no-op until this resolves — nothing turns on by itself.</p>
+    <h3 style="font-size:15px;margin-top:0;">1. Infra — provisioning</h3>
+    <p style="font-size:14px;">Upstash (HTTP-based Redis) vs. VPC-attached ElastiCache. Terminal's Lambdas have no VPC attachment today, so ElastiCache would be a first. Recommendation on file is Upstash; needs their sign-off either way. The PR is a safe no-op until this resolves — nothing turns on by itself.</p>
 
-    <h3 style="font-size:15px;">2. Douglas's Slack correction — consent-based keying</h3>
+    <h3 style="font-size:15px;">2. A stakeholder's Slack correction — consent-based keying</h3>
     <div class="quote">
       "To be clear — the REDIS cache approach is only for Users that tell us not to log/store their User data to their User profile — i.e. they don't give us permission to create PII data. If they give us permission, we keep the current approach, and we don't anonymise their data."
-      <cite>Douglas Rose, <a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">Slack, post-9-Nov-call</a></cite>
+      <cite>Product stakeholder, <a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">internal Slack, post-call</a></cite>
     </div>
-    <p style="font-size:14px;">Checked what this actually means in Terminal's code before assuming a gap: the account-identified key is <em>already</em> the literal, unhashed <code>userId</code> — only the no-token IP fallback gets hashed. So "account-linked, not anonymized" is already true today for every authenticated caller. The real open question — per Darrell's own ticket note, "no Redis-only requirement for that path" — is whether a <strong>granted-consent counter should stay in Redis (like today) or move to a persisted DB counter</strong>. That's a real architecture call for Ralph/Douglas, not guessed at here. There's also nowhere to read a live consent state from yet — the extension's consent gate (<a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba</a>) hasn't been built.</p>
+    <p style="font-size:14px;">Checked what this actually means in Terminal's code before assuming a gap: the account-identified key is <em>already</em> the literal, unhashed <code>userId</code> — only the no-token IP fallback gets hashed. So "account-linked, not anonymized" is already true today for every authenticated caller. The real open question — per the ticket's own note, "no Redis-only requirement for that path" — is whether a <strong>granted-consent counter should stay in Redis (like today) or move to a persisted DB counter</strong>. That's a real architecture call for the team, not guessed at here. There's also nowhere to read a live consent state from yet — the extension's consent gate (<a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba</a>) hasn't been built.</p>
     <p style="font-size:14px;">Same gap exists on the Feed side (<a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb</a>) — findings posted there too; most of Feed's ingestion rate limiting already shipped in October/November, ahead of this ticket.</p>
   </div>
 </section>
@@ -319,7 +319,7 @@
       <li><a href="https://app.clickup.com/t/14zpb0j3nrw" target="_blank">14zpb0j3nrw — parent initiative + 9 Nov call notes</a></li>
       <li><a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb — Feed ingestion subtask + findings</a></li>
       <li><a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba — extension consent gate</a></li>
-      <li><a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">Slack — Douglas's post-call correction</a></li>
+      <li><a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">Slack — stakeholder post-call correction</a></li>
       <li><a href="https://tldv.io/app/meetings/6af1c34ff46e670014bbdc1a/" target="_blank">tl;dv recording — 9 Nov sync</a></li>
     </ul>
   </div>
