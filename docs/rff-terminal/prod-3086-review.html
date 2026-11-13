@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROD-3086 — Rate Limiting Review: Source of Truth</title>
+<style>
+  :root {
+    --ink: #1a1d23; --muted: #5b6372; --line: #e3e6ea; --card: #ffffff;
+    --bg: #f6f7f9; --accent: #3b6fd6; --good: #1f8a4c; --good-bg: #eaf7ef;
+    --warn: #a6690a; --warn-bg: #fdf3e2; --open: #6b6f76; --open-bg: #eef0f2;
+    --code-bg: #f1f3f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 0 24px 80px; }
+  header.hero {
+    background: linear-gradient(135deg, #1a1d23 0%, #2c3444 100%);
+    color: #fff; padding: 48px 24px 40px; margin-bottom: 0;
+  }
+  header.hero .inner { max-width: 960px; margin: 0 auto; }
+  header.hero .kicker {
+    font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: #9db4e8; font-weight: 600; margin-bottom: 10px;
+  }
+  header.hero h1 { font-size: 28px; margin: 0 0 10px; font-weight: 700; }
+  header.hero p.sub { font-size: 15px; color: #c7cedb; margin: 0 0 20px; max-width: 680px; }
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px;
+    font-weight: 600; padding: 5px 11px; border-radius: 999px;
+  }
+  .badge.draft { background: #3a4152; color: #cfd6e4; }
+  .badge.pass { background: var(--good-bg); color: var(--good); }
+  .badge.link { background: rgba(255,255,255,.12); color: #fff; }
+  .badge a { color: inherit; text-decoration: none; }
+  .badge a:hover { text-decoration: underline; }
+
+  nav.toc {
+    display: flex; gap: 18px; flex-wrap: wrap; padding: 16px 24px;
+    background: var(--card); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 10; font-size: 13.5px;
+  }
+  nav.toc .inner { max-width: 960px; margin: 0 auto; display: flex; gap: 18px; flex-wrap: wrap; }
+  nav.toc a { color: var(--muted); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover { color: var(--accent); }
+
+  section { padding: 40px 0 8px; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  section h2 {
+    font-size: 20px; margin: 0 0 6px; display: flex; align-items: center; gap: 10px;
+  }
+  section .section-note { color: var(--muted); font-size: 14px; margin: 0 0 22px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px 24px; margin-bottom: 16px;
+  }
+
+  table.align { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.align th {
+    text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--muted); border-bottom: 2px solid var(--line); padding: 8px 10px;
+  }
+  table.align td { padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.align tr:last-child td { border-bottom: none; }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 12.5px;
+    padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .status.ok { background: var(--good-bg); color: var(--good); }
+  .status.warn { background: var(--warn-bg); color: var(--warn); }
+  .status.open { background: var(--open-bg); color: var(--open); }
+  code { background: var(--code-bg); border-radius: 4px; padding: 1.5px 5px; font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; }
+  .evidence { color: var(--muted); font-size: 12.5px; }
+
+  .quote {
+    border-left: 3px solid var(--accent); background: #f1f5fd; padding: 14px 18px;
+    border-radius: 0 8px 8px 0; font-size: 14px; font-style: italic; color: #2b3650; margin: 14px 0;
+  }
+  .quote cite { display: block; font-style: normal; font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  ul.bullets { padding-left: 20px; font-size: 14.5px; }
+  ul.bullets li { margin-bottom: 8px; }
+
+  .refs { font-size: 14px; }
+  .refs li { margin-bottom: 7px; }
+  .refs a { color: var(--accent); text-decoration: none; }
+  .refs a:hover { text-decoration: underline; }
+
+  .testgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 10px; }
+  .testgrid .stat { background: var(--good-bg); border-radius: 10px; padding: 14px; text-align: center; }
+  .testgrid .stat .n { font-size: 22px; font-weight: 800; color: var(--good); }
+  .testgrid .stat .l { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+
+  /* --- embedded animation (standalone fixed palette) --- */
+  .anim-wrap { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; overflow-x: auto; }
+  .anim-title { font-size: 13px; font-weight: 700; margin-bottom: 2px; }
+  .anim-sub { font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+  .anim-caption { font-size: 12px; color: var(--muted); min-height: 36px; line-height: 1.45; margin-bottom: 14px; }
+  .anim-caption code { background: var(--code-bg); color: var(--ink); border-radius: 4px; padding: 1px 4px; font-size: 11px; }
+  .anim-stage { position: relative; height: 330px; min-width: 780px; }
+  .anim-row { display: flex; gap: 12px; }
+  .anim-row.r1 { justify-content: flex-start; }
+  .anim-row.r2 { position: absolute; top: 118px; left: 0; width: 100%; display: flex; justify-content: flex-start; gap: 12px; }
+  .anim-row.r3 { position: absolute; top: 240px; left: 0; width: 100%; display: flex; justify-content: space-between; }
+  .anim-station {
+    background: #fafbfc; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 11px; text-align: center; position: relative; z-index: 2;
+    transition: border-color .25s, box-shadow .25s, opacity .25s;
+  }
+  .anim-station.main { width: 128px; }
+  .anim-station.redis { width: 150px; }
+  .anim-station.win { width: 140px; opacity: .55; }
+  .anim-station.win.active { opacity: 1; }
+  .anim-station.win.over { border-color: #d9534f; box-shadow: 0 0 0 1px #d9534f33; }
+  .anim-station.win.flush { border-color: var(--accent); box-shadow: 0 0 0 3px #3b6fd655; }
+  .anim-station.outcome { width: 230px; opacity: .4; }
+  .anim-station.outcome.lit { opacity: 1; }
+  .anim-station.outcome.allow.lit { border-color: #1f8a4c; box-shadow: 0 0 0 1px #1f8a4c33; }
+  .anim-station.outcome.block.lit { border-color: #d9534f; box-shadow: 0 0 0 1px #d9534f33; }
+  .anim-station.redis.mode-healthy { border-color: var(--accent); }
+  .anim-station.redis.mode-noop { border-color: var(--muted); opacity: .7; }
+  .anim-station.redis.mode-timeout { border-color: #a6690a; box-shadow: 0 0 0 1px #a6690a33; }
+  .anim-station.redis.mode-error { border-color: #c9623d; box-shadow: 0 0 0 1px #c9623d33; }
+  .anim-icon { font-size: 17px; line-height: 1; margin-bottom: 4px; }
+  .anim-label { font-size: 11px; font-weight: 700; }
+  .anim-sub2 { font-size: 10px; color: var(--muted); margin-top: 3px; min-height: 13px; }
+  .anim-mono { font-size: 9.5px; font-family: ui-monospace, monospace; color: var(--muted); margin-top: 2px; word-break: break-all; min-height: 11px; }
+  .anim-bar { margin-top: 5px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .anim-bar-fill { height: 100%; width: 0%; background: var(--accent); transition: width .3s, background .3s; }
+  .anim-bar-fill.over { background: #d9534f; }
+  .anim-connector { position: absolute; background: var(--line); height: 2px; transform-origin: 0 0; z-index: 1; }
+  .anim-dot {
+    position: absolute; width: 11px; height: 11px; border-radius: 50%; background: var(--accent);
+    z-index: 3; opacity: 0; transition: left .4s ease, top .4s ease, background .2s, opacity .2s;
+    box-shadow: 0 0 0 4px #3b6fd640;
+  }
+  .anim-legend { margin-top: 10px; font-size: 10.5px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .anim-legend .dot-sample { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .d-allow { background: #1f8a4c; } .d-block { background: #d9534f; }
+  .d-timeout { background: #a6690a; } .d-error { background: #c9623d; } .d-noop { background: var(--muted); }
+
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px 0; }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="inner">
+    <div class="kicker">Review source of truth · Reward Flight Finder</div>
+    <h1>PROD-3086 — Account/IP-Keyed Rate Limiting for Terminal</h1>
+    <p class="sub">What PR #562 does, how it maps to the decisions made on the 9 Nov 2026 Douglas/Darrell/Ralph sync, and what's still genuinely open. Built so this page — not a thread or a scroll through comments — is the thing to check before approving.</p>
+    <div class="badges">
+      <span class="badge draft">● Draft PR</span>
+      <span class="badge pass">✓ CI passing</span>
+      <span class="badge link"><a href="https://github.com/Reward-Flight-Finder/RFF_Terminal/pull/562" target="_blank">PR #562 →</a></span>
+      <span class="badge link"><a href="https://app.clickup.com/t/14zpb0j2q70" target="_blank">PROD-3086 →</a></span>
+      <span class="badge link"><a href="https://app.clickup.com/t/14zpb0j3nrw" target="_blank">Parent initiative →</a></span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc"><div class="inner">
+  <a href="#summary">Summary</a>
+  <a href="#alignment">Meeting alignment</a>
+  <a href="#how-it-works">How it works</a>
+  <a href="#scope">Out of scope</a>
+  <a href="#open">Open items</a>
+  <a href="#testing">Testing evidence</a>
+  <a href="#refs">References</a>
+</div></nav>
+
+<div class="page">
+
+<section id="summary">
+  <h2>Summary</h2>
+  <div class="card">
+    <p style="margin:0 0 12px;">Rate-limits the two Terminal endpoints the RFF extension actually calls for specific-date availability (British Airways v2's dedicated route, and the generic/Iberia route). Over the agreed thresholds, both return a sanitized <code>429</code> instead of hitting the database. Backed by Upstash (HTTP-based Redis), keyed primarily by account identity with a hashed-IP fallback, and fails <strong>open</strong> on any store error so a Redis problem can never become a Terminal outage.</p>
+    <p style="margin:0;">Ships today as a <strong>no-op</strong>: the Redis credentials are deliberately empty until Vanshita confirms the provisioning approach (Upstash vs. VPC-attached ElastiCache) — that's the one real blocker left, and it's an infra decision, not a code one.</p>
+  </div>
+</section>
+
+<section id="alignment">
+  <h2>Alignment with the 9 Nov Douglas/Darrell/Ralph sync</h2>
+  <p class="section-note">Recording: <a href="https://tldv.io/app/meetings/6af1c34ff46e670014bbdc1a/" target="_blank">tl;dv</a>. Decisions below are quoted from the call notes on <code>14zpb0j3nrw</code>, not paraphrased from memory.</p>
+  <div class="card">
+    <table class="align">
+      <tr><th>Decision from the call</th><th>Status</th><th>Evidence</th></tr>
+      <tr>
+        <td>Scope: read-API rate limiting only (ingestion/consent are separate subtasks)</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence"><code>handlers/british-airways-v2/specific-date-availability.ts</code>, <code>handlers/genericHandler/specific-date-availability.ts</code> — nowhere else</td>
+      </tr>
+      <tr>
+        <td>Storage: Redis, HTTP-based (no VPC attachment exists on these Lambdas)</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence">Upstash REST pipeline, <code>UpstashRateLimitStore</code> in <code>rate-limiter.ts</code></td>
+      </tr>
+      <tr>
+        <td>Keying: account-level, not session/install (100+ installs loophole)</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence"><code>resolveRateLimitIdentity</code> — decoded <code>userId</code> primary, hashed IP fallback</td>
+      </tr>
+      <tr>
+        <td>Windows: ~100/10-min, ~400/hour, ~2000/day, ship-and-tune</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence"><code>getSpecificDateAvailabilityRateLimitWindows</code>, overridable via env vars</td>
+      </tr>
+      <tr>
+        <td>IP must be anonymized (<em>Breyer v Germany</em>, CJEU 2016)</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence">SHA-256 hash, raw IP never logged or persisted as the key</td>
+      </tr>
+      <tr>
+        <td>Ephemeral counters, nothing persisted long-term in the main DB</td>
+        <td><span class="status ok">✓ aligned</span></td>
+        <td class="evidence">Redis TTL keys only; no new Postgres table</td>
+      </tr>
+      <tr>
+        <td>Vanshita's confirmation: per-account limit concept in Terminal, provisioning choice</td>
+        <td><span class="status open">⏳ open</span></td>
+        <td class="evidence">Confirmed greenfield (no infra exists); provisioning sign-off still pending — PR ships as no-op until then</td>
+      </tr>
+      <tr>
+        <td>Consent-based branching (Douglas's Slack correction, below)</td>
+        <td><span class="status warn">⚠ known gap</span></td>
+        <td class="evidence">Documented at <code>resolveRateLimitIdentity</code> — see Open Items</td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <h2>How it works</h2>
+  <p class="section-note">Live diagram — request → identity → three independent Redis windows → allow / block / fail-open. Demo thresholds are intentionally small so you can watch them fill; real defaults are 100/10-min, 400/hour, 2000/day.</p>
+  <div class="anim-wrap">
+    <div class="anim-title">PROD-3086 — rate limiter decision flow</div>
+    <div class="anim-sub">Auto-plays on loop. Watch the Redis box change color: healthy (blue), timed out (amber), pipeline command error (orange), not configured (gray) — all four, except healthy, fail OPEN.</div>
+    <div class="anim-caption" id="a-caption">Starting…</div>
+    <div class="anim-stage" id="a-stage">
+      <div class="anim-row r1">
+        <div class="anim-station main" id="a-caller"><div class="anim-icon">🙋</div><div class="anim-label">Caller</div><div class="anim-sub2" id="a-caller-sub">&nbsp;</div></div>
+        <div class="anim-station main" id="a-identity"><div class="anim-icon">🔑</div><div class="anim-label">Identity</div><div class="anim-sub2" id="a-identity-sub">account or IP?</div><div class="anim-mono" id="a-identity-mono">&nbsp;</div></div>
+        <div class="anim-station main" id="a-limiter"><div class="anim-icon">🧮</div><div class="anim-label">Rate limiter</div><div class="anim-sub2" id="a-limiter-sub">builds Redis key</div><div class="anim-mono" id="a-limiter-mono">&nbsp;</div></div>
+        <div class="anim-station redis" id="a-redis"><div class="anim-icon">🗄️</div><div class="anim-label">Redis (Upstash)</div><div class="anim-sub2" id="a-redis-mode">healthy</div><div class="anim-mono" id="a-redis-mono">idle</div></div>
+      </div>
+      <div class="anim-row r2">
+        <div class="anim-station win" id="a-win-10min"><div class="anim-label">10-min window</div><div class="anim-sub2" id="a-sub-10min">0 / 4</div><div class="anim-bar"><div class="anim-bar-fill" id="a-bar-10min"></div></div></div>
+        <div class="anim-station win" id="a-win-hour"><div class="anim-label">Hour window</div><div class="anim-sub2" id="a-sub-hour">0 / 7</div><div class="anim-bar"><div class="anim-bar-fill" id="a-bar-hour"></div></div></div>
+        <div class="anim-station win" id="a-win-day"><div class="anim-label">Day window</div><div class="anim-sub2" id="a-sub-day">0 / 11</div><div class="anim-bar"><div class="anim-bar-fill" id="a-bar-day"></div></div></div>
+      </div>
+      <div class="anim-row r3">
+        <div class="anim-station outcome allow" id="a-allow"><div class="anim-icon">✅</div><div class="anim-label" id="a-allow-label">200 OK → Terminal looks up the flight</div></div>
+        <div class="anim-station outcome block" id="a-block"><div class="anim-icon">⛔</div><div class="anim-label">429 Too Many Requests — DB never touched</div></div>
+      </div>
+      <div id="a-connectors"></div>
+      <div class="anim-dot" id="a-dot"></div>
+    </div>
+    <div class="anim-legend">
+      <div><span class="dot-sample d-allow"></span>all 3 windows under cap → passes through to Terminal</div>
+      <div><span class="dot-sample d-block"></span>any window over cap → blocked, before any DB work</div>
+      <div><span class="dot-sample d-timeout"></span>Redis times out → fails OPEN anyway</div>
+      <div><span class="dot-sample d-error"></span>Redis replies but one pipeline command errored → fails OPEN too</div>
+      <div><span class="dot-sample d-noop"></span>Redis not configured (today's shipped default) → always allowed</div>
+    </div>
+  </div>
+</section>
+
+<section id="scope">
+  <h2>Explicitly out of scope for this PR</h2>
+  <div class="card">
+    <ul class="bullets">
+      <li>Every other Terminal endpoint — locations, possible-routes, schedule, cabin-classes, flight-details, general flight-availability, map-box, swagger, v3 routes. Not called by the extension, excluded by the ticket.</li>
+      <li>Ingestion-side limiting — tracked separately on <code>RFF_Availability_Feed</code> (<a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb</a>).</li>
+      <li>Consent UI / privacy policy copy — <code>rff-extension</code> and the CMS, tracked on <a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba</a> / <a href="https://app.clickup.com/t/14zpb0j3pbc" target="_blank">14zpb0j3pbc</a>.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="open">
+  <h2>Open items that need a decision, not a code review</h2>
+  <div class="card">
+    <h3 style="font-size:15px;margin-top:0;">1. Vanshita — provisioning</h3>
+    <p style="font-size:14px;">Upstash (HTTP-based Redis) vs. VPC-attached ElastiCache. Terminal's Lambdas have no VPC attachment today, so ElastiCache would be a first. Recommendation on file is Upstash; needs her sign-off either way. The PR is a safe no-op until this resolves — nothing turns on by itself.</p>
+
+    <h3 style="font-size:15px;">2. Douglas's Slack correction — consent-based keying</h3>
+    <div class="quote">
+      "To be clear — the REDIS cache approach is only for Users that tell us not to log/store their User data to their User profile — i.e. they don't give us permission to create PII data. If they give us permission, we keep the current approach, and we don't anonymise their data."
+      <cite>Douglas Rose, <a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">Slack, post-9-Nov-call</a></cite>
+    </div>
+    <p style="font-size:14px;">Checked what this actually means in Terminal's code before assuming a gap: the account-identified key is <em>already</em> the literal, unhashed <code>userId</code> — only the no-token IP fallback gets hashed. So "account-linked, not anonymized" is already true today for every authenticated caller. The real open question — per Darrell's own ticket note, "no Redis-only requirement for that path" — is whether a <strong>granted-consent counter should stay in Redis (like today) or move to a persisted DB counter</strong>. That's a real architecture call for Ralph/Douglas, not guessed at here. There's also nowhere to read a live consent state from yet — the extension's consent gate (<a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba</a>) hasn't been built.</p>
+    <p style="font-size:14px;">Same gap exists on the Feed side (<a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb</a>) — findings posted there too; most of Feed's ingestion rate limiting already shipped in October/November, ahead of this ticket.</p>
+  </div>
+</section>
+
+<section id="testing">
+  <h2>Testing evidence</h2>
+  <div class="card">
+    <div class="testgrid">
+      <div class="stat"><div class="n">92/92</div><div class="l">test suites</div></div>
+      <div class="stat"><div class="n">1444/1444</div><div class="l">tests passing</div></div>
+      <div class="stat"><div class="n">0</div><div class="l">tsc errors</div></div>
+      <div class="stat"><div class="n">0</div><div class="l">eslint errors</div></div>
+      <div class="stat"><div class="n">✓</div><div class="l">prettier clean</div></div>
+      <div class="stat"><div class="n">✓</div><div class="l">hosted CI green</div></div>
+    </div>
+    <p style="font-size:13.5px;margin-top:16px;margin-bottom:0;color:var(--muted);">Also went through a full real <code>runway-review</code> pass plus 4 parallel review lanes (standards, full-gate, security, backend personas). All blocking findings fixed before this doc was written: config-forwarding gap, malformed-threshold guard, JWT payload logging, Upstash pipeline validation (mutation-tested — reverted the fix locally and confirmed tests go red), DB-before-limiter ordering, and a cache-replay bypass on the generic handler's success responses.</p>
+  </div>
+</section>
+
+<section id="refs">
+  <h2>References</h2>
+  <div class="card">
+    <ul class="refs">
+      <li><a href="https://github.com/Reward-Flight-Finder/RFF_Terminal/pull/562" target="_blank">PR #562 — RFF_Terminal</a></li>
+      <li><a href="https://app.clickup.com/t/14zpb0j2q70" target="_blank">PROD-3086 — this ticket</a></li>
+      <li><a href="https://app.clickup.com/t/14zpb0j3nrw" target="_blank">14zpb0j3nrw — parent initiative + 9 Nov call notes</a></li>
+      <li><a href="https://app.clickup.com/t/14zpb0j3pbb" target="_blank">14zpb0j3pbb — Feed ingestion subtask + findings</a></li>
+      <li><a href="https://app.clickup.com/t/14zpb0j3pba" target="_blank">14zpb0j3pba — extension consent gate</a></li>
+      <li><a href="https://rewardflightfinder.slack.com/archives/C0BSTQD1PR8/p1794238880066919" target="_blank">Slack — Douglas's post-call correction</a></li>
+      <li><a href="https://tldv.io/app/meetings/6af1c34ff46e670014bbdc1a/" target="_blank">tl;dv recording — 9 Nov sync</a></li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<footer>PROD-3086 review doc · generated for the RFF_Terminal PR #562 review round</footer>
+
+<script>
+(function () {
+  var stage = document.getElementById('a-stage');
+  var dot = document.getElementById('a-dot');
+  var caption = document.getElementById('a-caption');
+  var stCaller = document.getElementById('a-caller');
+  var stIdentity = document.getElementById('a-identity');
+  var stLimiter = document.getElementById('a-limiter');
+  var stRedis = document.getElementById('a-redis');
+  var stAllow = document.getElementById('a-allow');
+  var stBlock = document.getElementById('a-block');
+  var connectors = document.getElementById('a-connectors');
+
+  var WINDOWS = [
+    { key: '10min', cap: 4, resetEvery: 5, el: document.getElementById('a-win-10min'), bar: document.getElementById('a-bar-10min'), sub: document.getElementById('a-sub-10min'), count: 0, ttl: 600 },
+    { key: 'hour', cap: 7, resetEvery: 13, el: document.getElementById('a-win-hour'), bar: document.getElementById('a-bar-hour'), sub: document.getElementById('a-sub-hour'), count: 0, ttl: 3600 },
+    { key: 'day', cap: 11, resetEvery: 29, el: document.getElementById('a-win-day'), bar: document.getElementById('a-bar-day'), sub: document.getElementById('a-sub-day'), count: 0, ttl: 86400 },
+  ];
+
+  function center(el) {
+    var r = el.getBoundingClientRect(), c = stage.getBoundingClientRect();
+    return { x: r.left - c.left + r.width / 2, y: r.top - c.top + r.height / 2 };
+  }
+  function drawConnectors() {
+    connectors.innerHTML = '';
+    var pairs = [
+      [stCaller, stIdentity], [stIdentity, stLimiter], [stLimiter, stRedis],
+      [stLimiter, WINDOWS[0].el], [stLimiter, WINDOWS[1].el], [stLimiter, WINDOWS[2].el],
+      [stLimiter, stAllow], [stLimiter, stBlock],
+    ];
+    pairs.forEach(function (pair) {
+      var p1 = center(pair[0]), p2 = center(pair[1]);
+      var dx = p2.x - p1.x, dy = p2.y - p1.y;
+      var len = Math.hypot(dx, dy), angle = Math.atan2(dy, dx) * 180 / Math.PI;
+      var line = document.createElement('div');
+      line.className = 'anim-connector';
+      line.style.width = len + 'px'; line.style.left = p1.x + 'px'; line.style.top = p1.y + 'px';
+      line.style.transform = 'rotate(' + angle + 'deg)';
+      connectors.appendChild(line);
+    });
+  }
+  function placeDot(el, instant) {
+    var p = center(el);
+    if (instant) dot.style.transition = 'none';
+    dot.style.left = (p.x - 5.5) + 'px'; dot.style.top = (p.y - 5.5) + 'px';
+    if (instant) requestAnimationFrame(function () { dot.style.transition = ''; });
+  }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function setCaption(html) { caption.innerHTML = html; }
+  function clearLights() {
+    stAllow.classList.remove('lit'); stBlock.classList.remove('lit');
+    WINDOWS.forEach(function (w) { w.el.classList.remove('active', 'over', 'flush'); });
+    stRedis.className = 'anim-station redis';
+  }
+  function pickMode(n) {
+    if (n % 10 === 0) return 'noop';
+    if (n % 10 === 4) return 'timeout';
+    if (n % 10 === 7) return 'error';
+    return 'healthy';
+  }
+
+  async function cycle(n) {
+    clearLights();
+    var isAccount = Math.random() < 0.6;
+    var idRaw = isAccount ? 'acct_' + (7000 + (n % 37)) : (10 + (n % 5)) + '.20.' + (n % 255) + '.' + (n * 7 % 255);
+    var identityKey = isAccount ? 'account:' + idRaw : 'ip:' + idRaw;
+    var identityHash = isAccount ? idRaw : (Math.abs(Math.sin(n) * 1e8) | 0).toString(16).padStart(8, '0');
+    var mode = pickMode(n);
+
+    document.getElementById('a-caller-sub').textContent = isAccount ? 'logged-in caller' : 'anonymous caller';
+    dot.style.background = '#3b6fd6'; dot.style.opacity = '1';
+    placeDot(stCaller, true);
+    setCaption('Request #' + n + ' hits <code>specific-date-availability</code>' + (isAccount ? ' with an <code>access_token</code> header.' : ' with no usable token.'));
+    await sleep(450);
+
+    document.getElementById('a-identity-sub').textContent = isAccount ? 'decodeJwtToken → userId' : 'no token → hash(sourceIp)';
+    document.getElementById('a-identity-mono').textContent = isAccount ? "{ userId: '" + idRaw + "' }" : 'sha256(' + idRaw + ') → ' + identityHash + '…';
+    placeDot(stIdentity);
+    setCaption(isAccount
+      ? 'Identity resolved from the <b>verified</b> JWT payload (never logged). Key uses <code>account:' + idRaw + '</code> — the literal, unhashed id.'
+      : 'No valid token, so the limiter hashes the source IP (never stores it raw) → key uses <code>ip:' + identityHash + '…</code>.');
+    await sleep(550);
+
+    placeDot(stLimiter);
+    document.getElementById('a-limiter-mono').textContent = 'ratelimit:specific-date-availability:*:' + identityKey;
+    setCaption('Limiter checks all <b>3 independent windows</b> for this identity, one Redis round-trip each.');
+    await sleep(500);
+
+    var finalOutcome = null, failOpenReason = '';
+    for (var wi = 0; wi < WINDOWS.length; wi++) {
+      var w = WINDOWS[wi];
+      w.el.classList.add('active');
+      if (n % w.resetEvery === 0) {
+        w.count = 0; w.el.classList.add('flush'); w.bar.classList.remove('over');
+        w.bar.style.width = '0%'; w.sub.textContent = 'flushed → 0 / ' + w.cap;
+        setCaption('🚽 <b>' + w.key + ' window flushes</b> — the Redis key\u2019s TTL expired, so the counter resets to 0 / ' + w.cap + '.');
+        await sleep(650);
+        w.el.classList.remove('flush');
+      }
+      placeDot(stRedis);
+      var cmdKey = 'ratelimit:specific-date-availability:' + w.key + ':' + identityKey;
+      document.getElementById('a-redis-mono').textContent = 'INCR ' + cmdKey.slice(0, 28) + '… ; EXPIRE … ' + w.ttl + ' NX';
+
+      if (mode === 'healthy') {
+        stRedis.className = 'anim-station redis mode-healthy';
+        document.getElementById('a-redis-mode').textContent = 'healthy';
+        w.count += 1;
+        var resultJson = '[{"result":' + w.count + '},{"result":1}]';
+        setCaption('Upstash <code>/pipeline</code> replies <code>' + resultJson + '</code> — both INCR and EXPIRE entries are checked.');
+        await sleep(450);
+        placeDot(w.el);
+        var over = w.count > w.cap;
+        w.el.classList.toggle('over', over);
+        w.sub.textContent = w.count + ' / ' + w.cap;
+        w.bar.style.width = Math.min(100, (w.count / w.cap) * 100) + '%';
+        w.bar.classList.toggle('over', over);
+        if (over) {
+          setCaption('<b>' + w.key + ' window is over cap</b> (' + w.count + '/' + w.cap + ') — blocks now, no further windows checked.');
+          finalOutcome = 'block'; await sleep(600); break;
+        }
+        await sleep(300); placeDot(stLimiter);
+      } else if (mode === 'timeout') {
+        stRedis.className = 'anim-station redis mode-timeout';
+        document.getElementById('a-redis-mode').textContent = 'timed out (2s)';
+        setCaption('Upstash never responds within 2s for <code>' + w.key + '</code> → <b>fails OPEN</b>: a Redis outage must never become a Terminal outage.');
+        await sleep(650); finalOutcome = 'allow'; failOpenReason = 'fail-open (Redis timeout)'; break;
+      } else if (mode === 'error') {
+        stRedis.className = 'anim-station redis mode-error';
+        document.getElementById('a-redis-mode').textContent = 'command error';
+        setCaption('Upstash\u2019s pipeline is a <b>batch, not a transaction</b> — EXPIRE entry errored, treated as a store failure → <b>fails OPEN</b>.');
+        await sleep(650); finalOutcome = 'allow'; failOpenReason = 'fail-open (pipeline error)'; break;
+      } else if (mode === 'noop') {
+        stRedis.className = 'anim-station redis mode-noop';
+        document.getElementById('a-redis-mode').textContent = 'not configured';
+        setCaption('Redis env vars are empty (today\u2019s shipped default) → always allowed, warning logged once.');
+        await sleep(650); finalOutcome = 'allow'; failOpenReason = 'no-op (not provisioned yet)'; break;
+      }
+    }
+    if (!finalOutcome) finalOutcome = 'allow';
+    placeDot(finalOutcome === 'allow' ? stAllow : stBlock);
+    if (finalOutcome === 'allow') {
+      stAllow.classList.add('lit');
+      dot.style.background = failOpenReason ? '#a6690a' : '#1f8a4c';
+      document.getElementById('a-allow-label').textContent = failOpenReason
+        ? '200 OK → Terminal proceeds (' + failOpenReason + ')'
+        : '200 OK → Terminal looks up the flight';
+    } else {
+      stBlock.classList.add('lit');
+      dot.style.background = '#d9534f';
+    }
+    await sleep(900); dot.style.opacity = '0'; await sleep(250);
+  }
+
+  async function loop() {
+    drawConnectors();
+    var n = 0;
+    while (true) { n += 1; await cycle(n); }
+  }
+  window.addEventListener('resize', drawConnectors);
+  window.addEventListener('load', function () { drawConnectors(); loop(); });
+  if (document.readyState === 'complete') { drawConnectors(); loop(); }
+})();
+</script>
+</body>
+</html>
